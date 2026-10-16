@@ -3,6 +3,7 @@
     UI : Rayfield | Exec : Real / Solara / Xeno / Delta / Potassium
 
     Changements v2 :
+      - Rayfield partagé via _G.KanhaRayfield (pas de conflit loader/module)
       - Hooks avec filtre d'origine (pas de casse CameraController)
       - Silent Aim multi-method avec whitelist et cooldown humanisé
       - Kill Aura via firetouchinterest (safe) + TP fallback
@@ -65,7 +66,14 @@ local function poly_hookmetamethod(obj, method, fn)
 end
 local has_firetouchinterest = type(firetouchinterest) == "function"
 
-local Rayfield = loadstring(game:HttpGet(_H("68747470733a2f2f7369726975732e6d656e752f7261796669656c64")))()
+------------------------------------------------------------
+-- Rayfield (partagé si lancé depuis le loader)
+------------------------------------------------------------
+local Rayfield = _G.KanhaRayfield
+if not Rayfield then
+    Rayfield = loadstring(game:HttpGet(_H("68747470733a2f2f7369726975732e6d656e752f7261796669656c64")))()
+    _G.KanhaRayfield = Rayfield
+end
 
 ------------------------------------------------------------
 -- Notify
@@ -97,8 +105,8 @@ local State = {
         TargetPart = "Head", HitChance = 100, FOVRadius = 250,
         ShowTarget = false, TeamCheck = true, WallCheck = false,
         IgnoreForcefield = true, IgnoreInvisible = false,
-        OriginFilterRadius = 30,    -- distance max du ray origin à la caméra
-        CooldownBetweenHooks = 0.03, -- anti-detection
+        OriginFilterRadius = 30,
+        CooldownBetweenHooks = 0.03,
     },
     Trigger = {
         Enabled = false, Delay = 0.08, AutoFire = false,
@@ -115,7 +123,7 @@ local State = {
     KillAll = {
         Delay = 0.1, TeamCheck = true, WallCheck = false,
         IgnoreForcefield = true, IgnoreInvisible = false,
-        UseRemote = false, -- DÉSACTIVÉ par défaut, dangerous
+        UseRemote = false,
     },
     AutoFarm = { Enabled = false, Delay = 1.5 },
     ESP = {
@@ -150,7 +158,7 @@ local State = {
 ------------------------------------------------------------
 local ESPObjects = {}
 local ChamsObjects = {}
-local ChamsWatcher = {}   -- vérifie si les couleurs ont été reset côté serveur
+local ChamsWatcher = {}
 local FlyConnection, NoclipConnection, GodmodeConnection, AntiAFKConnection
 local MainLoopConnection, HeartbeatConnection
 local AutoFarmThread, KillAuraThread, FreeTPConnection, TriggerbotThread, SkinAutoThread
@@ -158,12 +166,12 @@ local InputBeganConnection, InputEndedConnection
 local KillAllRunning = false
 local TriggerbotRunning = false
 
-local FOVCircle       = Drawing.new("Circle")
-local SilentFOVCircle = Drawing.new("Circle")
-local TargetIndicator = Drawing.new("Circle")
+local FOVCircle        = Drawing.new("Circle")
+local SilentFOVCircle  = Drawing.new("Circle")
+local TargetIndicator  = Drawing.new("Circle")
 local TriggerFOVCircle = Drawing.new("Circle")
-local HitMarkers      = {}
-local HitMarkerPool   = {}
+local HitMarkers       = {}
+local HitMarkerPool    = {}
 
 local LastTarget, LastTargetTime = nil, 0
 local TriggerbotCooldown = false
@@ -185,8 +193,8 @@ local CachedChar, CachedHum, CachedHRP = nil, nil, nil
 
 local function refreshCharCache()
     CachedChar = LocalPlayer.Character
-    CachedHum = CachedChar and CachedChar:FindFirstChildOfClass("Humanoid")
-    CachedHRP = CachedChar and CachedChar:FindFirstChild("HumanoidRootPart")
+    CachedHum  = CachedChar and CachedChar:FindFirstChildOfClass("Humanoid")
+    CachedHRP  = CachedChar and CachedChar:FindFirstChild("HumanoidRootPart")
 end
 
 local function getLocalCharacter()
@@ -225,7 +233,7 @@ local function wallCheck(plr)
     if not hrp then return false end
     local params = RaycastParams.new()
     params.FilterType = Enum.RaycastFilterType.Exclude
-    params.FilterDescendantsInstances = {LocalPlayer.Character}
+    params.FilterDescendantsInstances = { LocalPlayer.Character }
     params.IgnoreWater = true
     local result = Workspace:Raycast(Camera.CFrame.Position, hrp.Position - Camera.CFrame.Position, params)
     if result then
@@ -324,21 +332,21 @@ end
 
 setupDrawing(FOVCircle, "Circle")
 FOVCircle.Radius = State.Aimbot.FOVRadius
-FOVCircle.Color = State.Aimbot.FOVColor
+FOVCircle.Color  = State.Aimbot.FOVColor
 
 setupDrawing(SilentFOVCircle, "Circle")
 SilentFOVCircle.Radius = State.Silent.FOVRadius
-SilentFOVCircle.Color = Color3.fromRGB(120, 200, 255)
+SilentFOVCircle.Color  = Color3.fromRGB(120, 200, 255)
 SilentFOVCircle.Transparency = 0.85
 
 setupDrawing(TargetIndicator, "Circle")
 TargetIndicator.Radius = 8
-TargetIndicator.Color = Color3.fromRGB(255, 50, 50)
+TargetIndicator.Color  = Color3.fromRGB(255, 50, 50)
 TargetIndicator.Thickness = 2
 
 setupDrawing(TriggerFOVCircle, "Circle")
 TriggerFOVCircle.Radius = 60
-TriggerFOVCircle.Color = Color3.fromRGB(255, 200, 60)
+TriggerFOVCircle.Color  = Color3.fromRGB(255, 200, 60)
 TriggerFOVCircle.Transparency = 0.85
 
 ------------------------------------------------------------
@@ -384,13 +392,13 @@ local function updateHitMarkers()
             local gap = 3
             local c = hm.Center
             hm.Lines[1].From = Vector2.new(c.X - gap - expand, c.Y - gap - expand)
-            hm.Lines[1].To = Vector2.new(c.X - gap, c.Y - gap)
+            hm.Lines[1].To   = Vector2.new(c.X - gap, c.Y - gap)
             hm.Lines[2].From = Vector2.new(c.X + gap, c.Y - gap)
-            hm.Lines[2].To = Vector2.new(c.X + gap + expand, c.Y - gap - expand)
+            hm.Lines[2].To   = Vector2.new(c.X + gap + expand, c.Y - gap - expand)
             hm.Lines[3].From = Vector2.new(c.X - gap - expand, c.Y + gap + expand)
-            hm.Lines[3].To = Vector2.new(c.X - gap, c.Y + gap)
+            hm.Lines[3].To   = Vector2.new(c.X - gap, c.Y + gap)
             hm.Lines[4].From = Vector2.new(c.X + gap, c.Y + gap)
-            hm.Lines[4].To = Vector2.new(c.X + gap + expand, c.Y + gap + expand)
+            hm.Lines[4].To   = Vector2.new(c.X + gap + expand, c.Y + gap + expand)
             for _, line in ipairs(hm.Lines) do line.Transparency = alpha end
         end
     end
@@ -516,7 +524,7 @@ local function removeESP(plr)
     ESPObjects[plr] = nil
 end
 
-local function cleanupAllESP() for plr, _ in pairs(ESPObjects) do removeESP(plr) end end
+local function cleanupAllESP() for plr in pairs(ESPObjects) do removeESP(plr) end end
 
 local function hideESP(esp)
     if not esp.Box.Visible then return end
@@ -530,8 +538,8 @@ local function updateESP()
 
     for plr, esp in pairs(ESPObjects) do
         local char = plr.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local hum  = char and char:FindFirstChildOfClass("Humanoid")
+        local hrp  = char and char:FindFirstChild("HumanoidRootPart")
         local head = char and char:FindFirstChild("Head")
 
         local valid = false
@@ -550,7 +558,7 @@ local function updateESP()
 
             if onScreen and feetOn and headPos.Z > 0 then
                 local height = math.abs(headPos.Y - feetPos.Y) * 1.1
-                local width = height * 0.7
+                local width  = height * 0.7
                 local x = headPos.X - width / 2
                 local y = headPos.Y
 
@@ -666,7 +674,7 @@ local function removeChamsFromChar(plr)
     ChamsWatcher[plr] = nil
 end
 
-local function cleanupAllChams() for plr, _ in pairs(ChamsObjects) do removeChamsFromChar(plr) end end
+local function cleanupAllChams() for plr in pairs(ChamsObjects) do removeChamsFromChar(plr) end end
 
 local function refreshChamsColor()
     for _, chams in pairs(ChamsObjects) do
@@ -701,7 +709,6 @@ local function updateChams()
             if not ChamsObjects[plr] then
                 applyChamsToChar(plr)
             else
-                -- watcher : si une part a été restaurée côté serveur, on réapplique
                 local now = tick()
                 if now - (ChamsWatcher[plr] or 0) > 1 then
                     ChamsWatcher[plr] = now
@@ -740,7 +747,6 @@ local hook_ok = pcall(function()
         local self = ...
         local args = {...}
 
-        -- Filtre d'origine : le ray doit partir de la caméra (pas d'un NPC ou d'un utilitaire du jeu)
         local function is_from_camera(origin)
             if typeof(origin) ~= "Vector3" then return false end
             return (origin - Camera.CFrame.Position).Magnitude < State.Silent.OriginFilterRadius
@@ -757,7 +763,6 @@ local hook_ok = pcall(function()
             end
 
             if rayIndex and is_from_camera(origin) then
-                -- Silent aim
                 if State.Silent.Enabled and (tick() - LastHookTime) > State.Silent.CooldownBetweenHooks then
                     if calculateChance(State.Silent.HitChance) then
                         local tPart = getSilentAimTarget()
@@ -771,7 +776,6 @@ local hook_ok = pcall(function()
                     end
                 end
 
-                -- No spread
                 if State.Misc.NoSpread then
                     if method == "Raycast" then args[3] = Camera.CFrame.LookVector
                     else args[2] = Ray.new(origin, Camera.CFrame.LookVector) end
@@ -780,7 +784,6 @@ local hook_ok = pcall(function()
             end
         end
 
-        -- Infinite ammo
         if method == "Fire" and State.Misc.InfiniteAmmo and typeof(self) == "Instance" and self:IsA("Tool") then
             for _, name in ipairs({"Ammo","Clip","Mag","CurrentAmmo","AmmoCount"}) do
                 local v = self:FindFirstChild(name)
@@ -796,7 +799,6 @@ if not hook_ok then
     warn("[KanhaHub] __namecall hook failed — silent aim disabled")
 end
 
--- Hook __index sur Mouse (optionnel, seulement si Silent Method = Mouse.Hit/Target)
 local oldIndex
 local index_hook_ok = pcall(function()
     oldIndex = poly_hookmetamethod(game, "__index", newcclosure(function(self, key)
@@ -874,8 +876,8 @@ end
 ------------------------------------------------------------
 -- Triggerbot
 ------------------------------------------------------------
-local hasMouse1Click = type(mouse1click) == "function"
-local hasMouse1Press = type(mouse1press) == "function"
+local hasMouse1Click   = type(mouse1click) == "function"
+local hasMouse1Press   = type(mouse1press) == "function"
 local hasMouse1Release = type(mouse1release) == "function"
 
 local function fireWeapon()
@@ -919,7 +921,7 @@ end
 ------------------------------------------------------------
 -- Movement
 ------------------------------------------------------------
-local FLY_VEL_NAME = _H("4b616e6861466c7956656c6f63697479")
+local FLY_VEL_NAME  = _H("4b616e6861466c7956656c6f63697479")
 local FLY_GYRO_NAME = _H("4b616e6861466c794779726f")
 
 local function toggleFly(state)
@@ -1115,7 +1117,7 @@ end
 
 local function applySkin(weaponName, skinName)
     local remote = findSkinRemote()
-    local tool = findCurrentWeapon()
+    local tool   = findCurrentWeapon()
     local tW = weaponName or (tool and tool.Name) or "Knife"
     local tS = skinName or State.Skin.SelectedSkin or "Default"
     if not remote then
@@ -1184,7 +1186,6 @@ local function killPlayer(plr)
     local hum = plr.Character:FindFirstChildOfClass("Humanoid")
     if not hum or hum.Health <= 0 then return end
 
-    -- Option 1 : firetouchinterest (le plus safe, le jeu pense que c'est un vrai contact)
     if has_firetouchinterest and State.KillAura.UseTouchInterest then
         local _, _, localHRP = getLocalCharacter()
         local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
@@ -1198,13 +1199,11 @@ local function killPlayer(plr)
         end
     end
 
-    -- Option 2 : RemoteEvent spam (dangerous, mais peut marcher sur Arsenal)
     if State.KillAll.UseRemote then
         local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
         if hrp then
             local origin = Camera.CFrame.Position
             local dir = getDirection(origin, hrp.Position)
-            -- whitelist : uniquement les remotes qui finissent par _hit / _damage (pas les emotes/chat)
             for _, d in ipairs(ReplicatedStorage:GetDescendants()) do
                 if d:IsA("RemoteEvent") then
                     local nm = d.Name:lower()
@@ -1218,7 +1217,6 @@ local function killPlayer(plr)
         end
     end
 
-    -- Toujours : essayer côté client (marche si le jeu fait confiance au client)
     pcall(function() hum.Health = 0 end)
     pcall(function() hum:TakeDamage(hum.MaxHealth) end)
 end
@@ -1429,8 +1427,8 @@ end)
 -- Main loops (FPS-based throttle)
 ------------------------------------------------------------
 local espTick, logicTick, weaponTick = 0, 0, 0
-local ESP_INTERVAL = 1 / 30
-local CHAMS_INTERVAL = 1 / 2
+local ESP_INTERVAL    = 1 / 30
+local CHAMS_INTERVAL  = 1 / 2
 local WEAPON_INTERVAL = 1
 
 MainLoopConnection = RunService.RenderStepped:Connect(function(dt)
@@ -1444,7 +1442,6 @@ MainLoopConnection = RunService.RenderStepped:Connect(function(dt)
 
     aimbotUpdate()
 
-    -- FOV circles
     if State.Aimbot.ShowFOV and State.Aimbot.Enabled then
         FOVCircle.Visible = true
         FOVCircle.Radius = State.Aimbot.FOVRadius
@@ -1521,7 +1518,6 @@ local Window = Rayfield:CreateWindow({
 
 local CombatTab = Window:CreateTab(_H("436f6d626174"), 6031097226)
 
--- Silent Aim
 CombatTab:CreateSection(_H("53696c656e742041696d"))
 CombatTab:CreateToggle({Name = _H("456e61626c652053696c656e742041696d"), CurrentValue = false, Flag = "SilentEnabled",
     Callback = function(v) State.Silent.Enabled = v end})
@@ -1551,7 +1547,6 @@ CombatTab:CreateToggle({Name = _H("53686f772054617267657420496e64696361746f72"),
         if not v and TargetIndicator.Visible then TargetIndicator.Visible = false end
     end})
 
--- Aimbot
 CombatTab:CreateSection(_H("41696d626f74"))
 CombatTab:CreateToggle({Name = _H("456e61626c652041696d626f74"), CurrentValue = false, Flag = "AimbotEnabled",
     Callback = function(v)
@@ -1598,7 +1593,6 @@ CombatTab:CreateToggle({Name = _H("41696d626f74205465616d20436865636b"), Current
 CombatTab:CreateToggle({Name = _H("41696d626f742057616c6c20436865636b"), CurrentValue = false, Flag = "AimbotWall",
     Callback = function(v) State.Aimbot.WallCheck = v end})
 
--- Triggerbot
 CombatTab:CreateSection(_H("54726967676572626f74"))
 CombatTab:CreateToggle({Name = _H("456e61626c652054726967676572626f74"), CurrentValue = false, Flag = "TrigEnabled",
     Callback = function(v)
@@ -1613,7 +1607,6 @@ CombatTab:CreateSlider({Name = _H("44656c6179"), Range = {0.05, 0.5}, Increment 
     CurrentValue = 0.08, Flag = "TrigDelay",
     Callback = function(v) State.Trigger.Delay = v end})
 
--- Exploits
 local ExploitTab = Window:CreateTab(_H("4578706c6f697473"), 6031097226)
 ExploitTab:CreateSection(_H("4b696c6c20416c6c"))
 ExploitTab:CreateSlider({Name = _H("44656c6179"), Range = {0.05, 1}, Increment = 0.01, Suffix = "s",
@@ -1662,7 +1655,6 @@ ExploitTab:CreateButton({
 ExploitTab:CreateKeybind({Name = _H("476f6c64656e204b6e696665204b6579"), CurrentKeybind = "G", HoldToInteract = false, Flag = "GoldenKey",
     Callback = function(k) State.Exploit.GoldenKnifeKeybind = Enum.KeyCode[k] end})
 
--- Skins
 local SkinTab = Window:CreateTab(_H("536b696e73"), 6031097226)
 SkinTab:CreateSection(_H("536b696e204368616e676572"))
 local skinList = scanSkins()
@@ -1682,7 +1674,6 @@ SkinTab:CreateButton({
 SkinTab:CreateToggle({Name = _H("4175746f2d4170706c79206f6e204571756970"), CurrentValue = false, Flag = "SkinAuto",
     Callback = function(v) State.Skin.AutoApply = v; if v then startSkinAuto() end end})
 
--- Teleport
 local TPTab = Window:CreateTab(_H("54656c65706f7274"), 6031097226)
 TPTab:CreateSection(_H("545020746f20506c61796572"))
 local function refreshPlayerList()
@@ -1714,7 +1705,6 @@ TPTab:CreateToggle({Name = _H("456e61626c652046726565205450"), CurrentValue = fa
 TPTab:CreateKeybind({Name = _H("46726565205450204b6579"), CurrentKeybind = "T", HoldToInteract = false, Flag = "FreeTPKey",
     Callback = function(k) State.Exploit.FreeTPKeybind = Enum.KeyCode[k] end})
 
--- Visuals
 local VisualsTab = Window:CreateTab(_H("56697375616c73"), 6031097226)
 VisualsTab:CreateSection(_H("455350"))
 VisualsTab:CreateToggle({Name = _H("456e61626c6520455350"), CurrentValue = false, Flag = "ESPOn",
@@ -1757,7 +1747,6 @@ VisualsTab:CreateColorPicker({Name = _H("54726163657220436f6c6f72"), Color = Col
 VisualsTab:CreateColorPicker({Name = _H("4368616d7320436f6c6f72"), Color = Color3.fromRGB(255, 60, 60), Flag = "ESPChamsCol",
     Callback = function(c) State.ESP.ChamsColor = c; refreshChamsColor() end})
 
--- Player
 local PlayerTab = Window:CreateTab(_H("506c61796572"), 6031097226)
 PlayerTab:CreateSection(_H("4d6f76656d656e74"))
 PlayerTab:CreateSlider({Name = _H("57616c6b5370656564"), Range = {16, 500}, Increment = 1, Suffix = "",
@@ -1798,7 +1787,6 @@ PlayerTab:CreateToggle({Name = _H("416e74692d41464b"), CurrentValue = false, Fla
 PlayerTab:CreateToggle({Name = _H("486974204d61726b6572"), CurrentValue = false, Flag = "HitMark",
     Callback = function(v) State.Misc.HitMarker = v end})
 
--- Settings
 local SettingsTab = Window:CreateTab(_H("53657474696e6773"), 6031097226)
 SettingsTab:CreateSection(_H("536572766572"))
 SettingsTab:CreateButton({Name = _H("52656a6f696e20536572766572"),
