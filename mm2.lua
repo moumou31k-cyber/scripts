@@ -19,7 +19,6 @@ local Lighting            = game:GetService("Lighting")
 local TeleportService     = game:GetService("TeleportService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local ReplicatedStorage   = game:GetService("ReplicatedStorage")
-local StarterGui          = game:GetService("StarterGui")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera      = Workspace.CurrentCamera
@@ -129,6 +128,7 @@ local function _launchMenu(session)
         SheriffColor = Color3.fromRGB(80, 150, 255),
         InnocentColor = Color3.fromRGB(80, 255, 80),
         HeroColor = Color3.fromRGB(255, 200, 60),
+        SuspectColor = Color3.fromRGB(255, 100, 0),
         ItemColor = Color3.fromRGB(255, 220, 80),
         CoinColor = Color3.fromRGB(255, 180, 30),
         GunColor = Color3.fromRGB(200, 100, 255),
@@ -183,9 +183,12 @@ local function _launchMenu(session)
         NotifyKnife = true,
     }
 
-    local TeleportSettings = {
-        SelectedPlayer = nil,
-        TPRadius = 5,
+    local DetectionSettings = {
+        Enabled = true,
+        SpeedThreshold = 60,
+        TPThreshold = 100,
+        NotifyOnDetection = true,
+        MarkInESP = true,
     }
 
     -- ═══════════════════════════════════════════════════════════
@@ -198,6 +201,8 @@ local function _launchMenu(session)
     local HitMarkerPool = {}
     local NotifiedItems = {}
     local RoleNotified = {}
+    local SuspiciousPlayers = {}
+    local PlayerHistory = {}
 
     local FlyConnection, NoclipConnection, AntiAFKConnection, AutoFarmThread
     local RenderConnection, HeartbeatConnection, AutoShootThread, KillAuraThread
@@ -211,6 +216,7 @@ local function _launchMenu(session)
     local LastTarget, LastTargetTime = nil, 0
     local AutoFarmRunning = false
     local AutoShootCooldown = false
+
     local OriginalLighting = {
         Ambient = Lighting.Ambient,
         OutdoorAmbient = Lighting.OutdoorAmbient,
@@ -237,7 +243,10 @@ local function _launchMenu(session)
         return char, char:FindFirstChildOfClass("Humanoid"), char:FindFirstChild("HumanoidRootPart")
     end
 
-    local function checkContainerForItem(container, names)
+    local GUN_NAMES = {"gun", "revolver", "pistol", "sheriff", "hero"}
+    local KNIFE_NAMES = {"knife", "blade", "dagger"}
+
+    local function containerHas(container, names)
         if not container then return false end
         for _, item in ipairs(container:GetChildren()) do
             if item:IsA("Tool") then
@@ -256,12 +265,11 @@ local function _launchMenu(session)
         if not char then return "Unknown" end
         local backpack = plr:FindFirstChild("Backpack")
 
-        if checkContainerForItem(char, {"knife"}) or checkContainerForItem(backpack, {"knife"}) then
-            return "Murderer"
-        end
-        if checkContainerForItem(char, {"gun", "revolver"}) or checkContainerForItem(backpack, {"gun", "revolver"}) then
-            return "Sheriff"
-        end
+        local hasKnife = containerHas(char, KNIFE_NAMES) or containerHas(backpack, KNIFE_NAMES)
+        local hasGun = containerHas(char, GUN_NAMES) or containerHas(backpack, GUN_NAMES)
+
+        if hasKnife then return "Murderer" end
+        if hasGun then return "Sheriff" end
         return "Innocent"
     end
 
@@ -292,6 +300,89 @@ local function _launchMenu(session)
     local function isAimActivated()
         if AimSettings.UseMouseBind then return MouseButtonStates[AimSettings.MouseBind] == true end
         return UserInputService:IsKeyDown(AimSettings.Keybind)
+    end
+
+    -- ═══════════════════════════════════════════════════════════
+    -- EXECUTOR / CHEATER DETECTION
+    -- ═══════════════════════════════════════════════════════════
+
+    local function flagPlayer(plr, reason)
+        if not plr then return end
+        if not SuspiciousPlayers[plr] then
+            SuspiciousPlayers[plr] = { reasons = {}, score = 0, t = tick() }
+        end
+        if not SuspiciousPlayers[plr].reasons[reason] then
+            SuspiciousPlayers[plr].reasons[reason] = true
+            SuspiciousPlayers[plr].score = SuspiciousPlayers[plr].score + 1
+            SuspiciousPlayers[plr].t = tick()
+            if DetectionSettings.NotifyOnDetection then
+                Rayfield:Notify({
+                    Title = "SUSPECT DETECTE",
+                    Content = plr.Name .. " : " .. reason,
+                    Duration = 6,
+                })
+            end
+        end
+    end
+
+    local function getSuspicionScore(plr)
+        local s = SuspiciousPlayers[plr]
+        return s and s.score or 0
+    end
+
+    local function updateDetection(dt)
+        if not DetectionSettings.Enabled then return end
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr ~= LocalPlayer and plr.Character then
+                local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+                local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+                if hrp and hum and hum.Health > 0 then
+                    local now = tick()
+                    local hist = PlayerHistory[plr]
+                    if not hist then
+                        PlayerHistory[plr] = { lastPos = hrp.Position, lastCheck = now, tpCount = 0, speedCount = 0 }
+                    else
+                        local dtHist = now - hist.lastCheck
+                        if dtHist > 0.05 then
+                            local dist = (hrp.Position - hist.lastPos).Magnitude
+                            local speed = dist / dtHist
+
+                            if speed > DetectionSettings.SpeedThreshold then
+                                hist.speedCount = hist.speedCount + 1
+                                if hist.speedCount >= 3 then
+                                    flagPlayer(plr, "Speed " .. math.floor(speed) .. " s/s")
+                                end
+                            else
+                                hist.speedCount = 0
+                            end
+
+                            if dist > DetectionSettings.TPThreshold and dtHist < 0.5 then
+                                hist.tpCount = hist.tpCount + 1
+                                if hist.tpCount >= 2 then
+                                    flagPlayer(plr, "TP " .. math.floor(dist) .. " studs")
+                                end
+                            else
+                                if hist.tpCount > 0 then hist.tpCount = hist.tpCount - 1 end
+                            end
+
+                            hist.lastPos = hrp.Position
+                            hist.lastCheck = now
+                        end
+                    end
+                end
+            end
+        end
+
+        for plr, _ in pairs(PlayerHistory) do
+            if not plr or not plr.Parent then PlayerHistory[plr] = nil end
+        end
+        for plr, s in pairs(SuspiciousPlayers) do
+            if not plr or not plr.Parent then
+                SuspiciousPlayers[plr] = nil
+            elseif (tick() - s.t) > 60 then
+                SuspiciousPlayers[plr] = nil
+            end
+        end
     end
 
     -- ═══════════════════════════════════════════════════════════
@@ -466,11 +557,13 @@ local function _launchMenu(session)
                     local y = headPos.Y
                     local role = getPlayerRole(plr)
                     local col = roleColor(role)
+                    local suspectScore = getSuspicionScore(plr)
+                    local suspectTag = suspectScore > 0 and (" [SUSPECT x" .. suspectScore .. "]") or ""
 
                     if ESPSettings.Box then
                         esp.Box.Size = Vector2.new(width, height)
                         esp.Box.Position = Vector2.new(x, y)
-                        esp.Box.Color = col
+                        esp.Box.Color = suspectScore > 0 and ESPSettings.SuspectColor or col
                         esp.Box.Visible = true
                         esp.Outline.Size = esp.Box.Size
                         esp.Outline.Position = esp.Box.Position
@@ -478,9 +571,9 @@ local function _launchMenu(session)
                     else esp.Box.Visible = false; esp.Outline.Visible = false end
 
                     if ESPSettings.Name then
-                        esp.Name.Text = plr.Name
+                        esp.Name.Text = plr.Name .. suspectTag
                         esp.Name.Position = Vector2.new(headPos.X, y - 32)
-                        esp.Name.Color = col
+                        esp.Name.Color = suspectScore > 0 and ESPSettings.SuspectColor or col
                         esp.Name.Visible = true
                     else esp.Name.Visible = false end
 
@@ -515,7 +608,7 @@ local function _launchMenu(session)
                         local sc = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
                         esp.Tracer.From = sc
                         esp.Tracer.To = Vector2.new(headPos.X, headPos.Y + height)
-                        esp.Tracer.Color = col
+                        esp.Tracer.Color = suspectScore > 0 and ESPSettings.SuspectColor or col
                         esp.Tracer.Visible = true
                     else esp.Tracer.Visible = false end
                 else
@@ -569,49 +662,69 @@ local function _launchMenu(session)
             if next(ItemESPObjects) then cleanupAllItemESP() end
             return
         end
-        local seen = {}
-        for _, item in ipairs(Workspace:GetChildren()) do
-            local category = getItemCategory(item)
-            if category then
-                local show = false
-                if category == "coin" and ESPSettings.CoinESP then show = true end
-                if category == "gun" and ESPSettings.GunESP then show = true end
-                if category == "knife" and ESPSettings.GunESP then show = true end
-                if category == "tool" and ESPSettings.ItemESP then show = true end
 
-                if show then
-                    seen[item] = true
-                    if not ItemESPObjects[item] then createItemESP(item, category) end
-                    local text = ItemESPObjects[item]
-                    if text then
-                        local handle = item:FindFirstChild("Handle") or item:FindFirstChild("Base")
-                        local pos = handle and handle.Position or (item:IsA("BasePart") and item.Position) or nil
-                        if pos then
-                            local sPos, onScreen = WorldToViewportPoint(Camera, pos)
-                            if onScreen and sPos.Z > 0 then
-                                text.Position = Vector2.new(sPos.X, sPos.Y - 20)
-                                text.Text = item.Name
-                                text.Visible = true
-                                if not NotifiedItems[item] then
-                                    if category == "gun" and DetectorSettings.NotifyGun then
-                                        Rayfield:Notify({Title = "Gun detecte", Content = "Un pistolet est au sol !", Duration = 4})
-                                    end
-                                    if category == "knife" and DetectorSettings.NotifyKnife then
-                                        Rayfield:Notify({Title = "Couteau detecte", Content = "Le couteau est au sol !", Duration = 4})
-                                    end
-                                    NotifiedItems[item] = true
-                                end
-                            else
-                                text.Visible = false
-                            end
-                        end
+        local seen = {}
+
+        local function processItem(item)
+            local category = getItemCategory(item)
+            if not category then return end
+
+            local show = false
+            if category == "coin" and ESPSettings.CoinESP then show = true end
+            if category == "gun" and ESPSettings.GunESP then show = true end
+            if category == "knife" and ESPSettings.GunESP then show = true end
+            if category == "tool" and ESPSettings.ItemESP then show = true end
+            if not show then return end
+
+            seen[item] = true
+            if not ItemESPObjects[item] then createItemESP(item, category) end
+            local text = ItemESPObjects[item]
+            if not text then return end
+
+            local handle = item:FindFirstChild("Handle") or item:FindFirstChild("Base")
+            local pos = handle and handle.Position or (item:IsA("BasePart") and item.Position) or nil
+            if not pos then return end
+
+            local sPos, onScreen = WorldToViewportPoint(Camera, pos)
+            if onScreen and sPos.Z > 0 then
+                text.Position = Vector2.new(sPos.X, sPos.Y - 20)
+                text.Text = item.Name
+                text.Visible = true
+
+                if not NotifiedItems[item] then
+                    if category == "gun" and DetectorSettings.NotifyGun then
+                        Rayfield:Notify({Title = "Gun detecte", Content = "Un pistolet est au sol !", Duration = 4})
                     end
+                    if category == "knife" and DetectorSettings.NotifyKnife then
+                        Rayfield:Notify({Title = "Couteau detecte", Content = "Le couteau est au sol !", Duration = 4})
+                    end
+                    NotifiedItems[item] = true
+                end
+            else
+                text.Visible = false
+            end
+        end
+
+        local function scanContainer(container, depth)
+            if depth > 3 or not container then return end
+            for _, item in ipairs(container:GetChildren()) do
+                if item:IsA("Folder") or item:IsA("Model") then
+                    scanContainer(item, depth + 1)
+                else
+                    processItem(item)
                 end
             end
         end
+        scanContainer(Workspace, 0)
+
         for item, _ in pairs(ItemESPObjects) do
             if not seen[item] or not item.Parent then
                 removeItemESP(item)
+            end
+        end
+        for item, _ in pairs(NotifiedItems) do
+            if not item or not item.Parent or not seen[item] then
+                NotifiedItems[item] = nil
             end
         end
     end
@@ -636,6 +749,11 @@ local function _launchMenu(session)
         for plr, _ in pairs(RoleNotified) do
             if not plr or not plr.Parent then
                 RoleNotified[plr] = nil
+            else
+                local currentRole = getPlayerRole(plr)
+                if currentRole == "Innocent" then
+                    RoleNotified[plr] = nil
+                end
             end
         end
     end
@@ -658,6 +776,7 @@ local function _launchMenu(session)
                 if preferredRole == "Sheriff" and role == "Sheriff" then matches = true end
                 if preferredRole == "Innocent" and role == "Innocent" then matches = true end
                 if preferredRole == "Any" then matches = true end
+                if preferredRole == "Suspect" and getSuspicionScore(plr) > 0 then matches = true end
 
                 if matches then
                     local tPart = plr.Character:FindFirstChild(AimSettings.TargetPart)
@@ -760,7 +879,9 @@ local function _launchMenu(session)
         for _, c in ipairs(char:GetChildren()) do
             if c:IsA("Tool") then
                 local n = c.Name:lower()
-                if n:find("gun") or n:find("revolver") then return true end
+                for _, g in ipairs(GUN_NAMES) do
+                    if n:find(g) then return true end
+                end
             end
         end
         return false
@@ -976,17 +1097,19 @@ local function _launchMenu(session)
     end
 
     local function toggleFullbright(state)
-        if state then
-            Lighting.Ambient = Color3.fromRGB(255, 255, 255)
-            Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
-            Lighting.Brightness = 3
-            Lighting.ClockTime = 14
-        else
-            Lighting.Ambient = OriginalLighting.Ambient
-            Lighting.OutdoorAmbient = OriginalLighting.OutdoorAmbient
-            Lighting.Brightness = OriginalLighting.Brightness
-            Lighting.ClockTime = OriginalLighting.ClockTime
-        end
+        pcall(function()
+            if state then
+                Lighting.Ambient = Color3.fromRGB(255, 255, 255)
+                Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
+                Lighting.Brightness = 3
+                Lighting.ClockTime = 14
+            else
+                Lighting.Ambient = OriginalLighting.Ambient
+                Lighting.OutdoorAmbient = OriginalLighting.OutdoorAmbient
+                Lighting.Brightness = OriginalLighting.Brightness
+                Lighting.ClockTime = OriginalLighting.ClockTime
+            end
+        end)
     end
 
     -- ═══════════════════════════════════════════════════════════
@@ -1167,13 +1290,14 @@ local function _launchMenu(session)
     -- LOOPS
     -- ═══════════════════════════════════════════════════════════
 
-    local espTick, itemTick, roleTick = 0, 0, 0
-    local ESP_INTERVAL, ITEM_INTERVAL, ROLE_INTERVAL = 0.033, 0.1, 0.5
+    local espTick, itemTick, roleTick, detectTick = 0, 0, 0, 0
+    local ESP_INTERVAL, ITEM_INTERVAL, ROLE_INTERVAL, DETECT_INTERVAL = 0.033, 0.1, 0.5, 0.1
 
     RenderConnection = RunService.RenderStepped:Connect(function(dt)
         espTick = espTick + dt
         itemTick = itemTick + dt
         roleTick = roleTick + dt
+        detectTick = detectTick + dt
 
         if ESPSettings.Enabled and espTick >= ESP_INTERVAL then
             espTick = 0
@@ -1188,6 +1312,11 @@ local function _launchMenu(session)
         if roleTick >= ROLE_INTERVAL then
             roleTick = 0
             updateRoleDetector()
+        end
+
+        if detectTick >= DETECT_INTERVAL then
+            detectTick = 0
+            updateDetection(dt)
         end
 
         if AimSettings.ShowFOV and AimSettings.Enabled then
@@ -1212,6 +1341,8 @@ local function _launchMenu(session)
     Players.PlayerRemoving:Connect(function(plr)
         removeESP(plr)
         RoleNotified[plr] = nil
+        SuspiciousPlayers[plr] = nil
+        PlayerHistory[plr] = nil
     end)
 
     -- ═══════════════════════════════════════════════════════════
@@ -1359,6 +1490,8 @@ local function _launchMenu(session)
         Callback = function(c) ESPSettings.SheriffColor = c end})
     ESPTab:CreateColorPicker({Name = _H("496e6e6f63656e7420436f6c6f72"), Color = Color3.fromRGB(80, 255, 80), Flag = "ESPColInnocent",
         Callback = function(c) ESPSettings.InnocentColor = c end})
+    ESPTab:CreateColorPicker({Name = _H("5375737065637420436f6c6f72"), Color = Color3.fromRGB(255, 100, 0), Flag = "ESPColSuspect",
+        Callback = function(c) ESPSettings.SuspectColor = c end})
     ESPTab:CreateColorPicker({Name = _H("4974656d20436f6c6f72"), Color = Color3.fromRGB(255, 220, 80), Flag = "ESPColItem",
         Callback = function(c) ESPSettings.ItemColor = c end})
     ESPTab:CreateColorPicker({Name = _H("436f696e20436f6c6f72"), Color = Color3.fromRGB(255, 180, 30), Flag = "ESPColCoin",
@@ -1367,6 +1500,7 @@ local function _launchMenu(session)
         Callback = function(c) ESPSettings.GunColor = c end})
 
     local DetectorTab = Window:CreateTab(_H("4465746563746f72"), 6031097226)
+
     DetectorTab:CreateSection(_H("4e6f74696669636174696f6e73"))
     DetectorTab:CreateToggle({Name = _H("4e6f74696679204d75726465726572"), CurrentValue = true, Flag = "NotifyMurderer",
         Callback = function(v) DetectorSettings.NotifyMurderer = v end})
@@ -1376,6 +1510,53 @@ local function _launchMenu(session)
         Callback = function(v) DetectorSettings.NotifyGun = v end})
     DetectorTab:CreateToggle({Name = _H("4e6f74696679204b6e696665"), CurrentValue = true, Flag = "NotifyKnife",
         Callback = function(v) DetectorSettings.NotifyKnife = v end})
+
+    DetectorTab:CreateSection(_H("4578656375746f722044657465637465"))
+    DetectorTab:CreateToggle({Name = _H("456e61626c65204578656375746f722044657465637465"), CurrentValue = true, Flag = "DetectionEnabled",
+        Callback = function(v) DetectionSettings.Enabled = v end})
+    DetectorTab:CreateToggle({Name = _H("4e6f74696679206f6e20446574656374696f6e"), CurrentValue = true, Flag = "DetectionNotify",
+        Callback = function(v) DetectionSettings.NotifyOnDetection = v end})
+    DetectorTab:CreateToggle({Name = _H("4d61726b20696e20455350"), CurrentValue = true, Flag = "DetectionMark",
+        Callback = function(v) DetectionSettings.MarkInESP = v end})
+    DetectorTab:CreateSlider({Name = _H("5370656564205468726573686f6c64"), Range = {20, 200}, Increment = 5, Suffix = "s/s",
+        CurrentValue = 60, Flag = "SpeedThreshold",
+        Callback = function(v) DetectionSettings.SpeedThreshold = v end})
+    DetectorTab:CreateSlider({Name = _H("5450205468726573686f6c64"), Range = {30, 500}, Increment = 10, Suffix = "studs",
+        CurrentValue = 100, Flag = "TPThreshold",
+        Callback = function(v) DetectionSettings.TPThreshold = v end})
+
+    DetectorTab:CreateSection(_H("5375737065637473"))
+    DetectorTab:CreateButton({
+        Name = _H("53686f7720537573706963696f757320506c6179657273"),
+        Callback = function()
+            local found = false
+            for plr, s in pairs(SuspiciousPlayers) do
+                if plr and plr.Parent then
+                    found = true
+                    local reasons = {}
+                    for r, _ in pairs(s.reasons) do
+                        table.insert(reasons, r)
+                    end
+                    Rayfield:Notify({
+                        Title = "Suspect: " .. plr.Name,
+                        Content = "Score: " .. s.score .. " | " .. table.concat(reasons, ", "),
+                        Duration = 6,
+                    })
+                end
+            end
+            if not found then
+                Rayfield:Notify({Title = "Suspects", Content = "Aucun suspect detecte.", Duration = 4})
+            end
+        end,
+    })
+    DetectorTab:CreateButton({
+        Name = _H("526573657420446574656374696f6e"),
+        Callback = function()
+            SuspiciousPlayers = {}
+            PlayerHistory = {}
+            Rayfield:Notify({Title = "Reset", Content = "Liste des suspects videe.", Duration = 3})
+        end,
+    })
 
     local PickupTab = Window:CreateTab(_H("5069636b7570"), 6031097226)
     PickupTab:CreateSection(_H("4175746f205069636b7570"))
@@ -1459,6 +1640,8 @@ local function _launchMenu(session)
             AutoPickupSettings.AutoPickupCoins = false
             cleanupAllESP(); cleanupAllItemESP()
             toggleFullbright(false)
+            SuspiciousPlayers = {}
+            PlayerHistory = {}
             for _, hm in ipairs(HitMarkers) do releaseMarkerToPool(hm.Lines) end
             HitMarkers = {}
             for _, lines in ipairs(HitMarkerPool) do
