@@ -10,11 +10,12 @@ local _SRV = "https://kanha-hub.loca.lt"
 local _DISCORD = "https://discord.gg/n9vcsTdce"
 local _BASE = "https://raw.githubusercontent.com/moumou31k-cyber/scripts/refs/heads/main/"
 
-local GAMES = {
-    {name = _H("526976616c73"),      file = _H("726976616c732e6c7561"),       placeIds = {17625359962}},
-    {name = _H("417273656e616c"),    file = _H("617273656e616c2e6c7561"),     placeIds = {286090429}},
-    {name = _H("4d4d32"),            file = _H("6d6d322e6c7561"),             placeIds = {142823291}},
-}
+local GAMES = { {name = _H("526976616c73"), file = _H("726976616c732e6c7561"), 
+placeIds = {17625359962}}, {name = _H("417273656e616c"), file = 
+_H("617273656e616c2e6c7561"), placeIds = {286090429}}, {name = _H("4d4d32"), 
+file = _H("6d6d322e6c7561"), placeIds = {142823291}}, {name = 
+_H("536e69706572204172656e61"), file = _H("736e697065722d6172656e612e6c7561"), 
+placeIds = {122446657157717}}, }
 
 local HttpService      = game:GetService("HttpService")
 local UserInputService = game:GetService("UserInputService")
