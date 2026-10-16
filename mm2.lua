@@ -15,6 +15,7 @@ local UserInputService    = game:GetService("UserInputService")
 local TweenService        = game:GetService("TweenService")
 local RunService          = game:GetService("RunService")
 local Workspace           = game:GetService("Workspace")
+local Lighting            = game:GetService("Lighting")
 local TeleportService     = game:GetService("TeleportService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
 local ReplicatedStorage   = game:GetService("ReplicatedStorage")
@@ -196,6 +197,7 @@ local function _launchMenu(session)
     local HitMarkers = {}
     local HitMarkerPool = {}
     local NotifiedItems = {}
+    local RoleNotified = {}
 
     local FlyConnection, NoclipConnection, AntiAFKConnection, AutoFarmThread
     local RenderConnection, HeartbeatConnection, AutoShootThread, KillAuraThread
@@ -235,49 +237,31 @@ local function _launchMenu(session)
         return char, char:FindFirstChildOfClass("Humanoid"), char:FindFirstChild("HumanoidRootPart")
     end
 
-    -- Détection de rôle AMÉLIORÉE (regarde character + backpack + attributs)
+    local function checkContainerForItem(container, names)
+        if not container then return false end
+        for _, item in ipairs(container:GetChildren()) do
+            if item:IsA("Tool") then
+                local n = item.Name:lower()
+                for _, name in ipairs(names) do
+                    if n == name or n:find(name) then return true end
+                end
+            end
+        end
+        return false
+    end
+
     local function getPlayerRole(plr)
         if not plr then return "Unknown" end
-        if plr == LocalPlayer then
-            -- Pour soi-même
-            local char = plr.Character
-            local backpack = plr:FindFirstChild("Backpack")
-            local function check(container, names)
-                if not container then return false end
-                for _, item in ipairs(container:GetChildren()) do
-                    if item:IsA("Tool") then
-                        for _, n in ipairs(names) do
-                            if item.Name:lower() == n or item.Name:lower():find(n) then
-                                return true
-                            end
-                        end
-                    end
-                end
-                return false
-            end
-            if check(char, {"knife"}) or check(backpack, {"knife"}) then return "Murderer" end
-            if check(char, {"gun", "revolver"}) or check(backpack, {"gun", "revolver"}) then return "Sheriff" end
-            return "Innocent"
-        end
-
         local char = plr.Character
         if not char then return "Unknown" end
-        -- Murderer = a le couteau équipé (ou dans son backpack)
         local backpack = plr:FindFirstChild("Backpack")
-        local function check(container, names)
-            if not container then return false end
-            for _, item in ipairs(container:GetChildren()) do
-                if item:IsA("Tool") then
-                    local n = item.Name:lower()
-                    for _, name in ipairs(names) do
-                        if n == name or n:find(name) then return true end
-                    end
-                end
-            end
-            return false
+
+        if checkContainerForItem(char, {"knife"}) or checkContainerForItem(backpack, {"knife"}) then
+            return "Murderer"
         end
-        if check(char, {"knife"}) or check(backpack, {"knife"}) then return "Murderer" end
-        if check(char, {"gun", "revolver"}) or check(backpack, {"gun", "revolver"}) then return "Sheriff" end
+        if checkContainerForItem(char, {"gun", "revolver"}) or checkContainerForItem(backpack, {"gun", "revolver"}) then
+            return "Sheriff"
+        end
         return "Innocent"
     end
 
@@ -542,7 +526,7 @@ local function _launchMenu(session)
     end
 
     -- ═══════════════════════════════════════════════════════════
-    -- ITEM ESP (coins, guns, dropped items)
+    -- ITEM ESP
     -- ═══════════════════════════════════════════════════════════
 
     local function getItemCategory(item)
@@ -592,6 +576,7 @@ local function _launchMenu(session)
                 local show = false
                 if category == "coin" and ESPSettings.CoinESP then show = true end
                 if category == "gun" and ESPSettings.GunESP then show = true end
+                if category == "knife" and ESPSettings.GunESP then show = true end
                 if category == "tool" and ESPSettings.ItemESP then show = true end
 
                 if show then
@@ -607,13 +592,12 @@ local function _launchMenu(session)
                                 text.Position = Vector2.new(sPos.X, sPos.Y - 20)
                                 text.Text = item.Name
                                 text.Visible = true
-                                -- Notification pour gun/knife
                                 if not NotifiedItems[item] then
                                     if category == "gun" and DetectorSettings.NotifyGun then
-                                        Rayfield:Notify({Title = "Gun détecté", Content = "Un pistolet est au sol !", Duration = 4})
+                                        Rayfield:Notify({Title = "Gun detecte", Content = "Un pistolet est au sol !", Duration = 4})
                                     end
                                     if category == "knife" and DetectorSettings.NotifyKnife then
-                                        Rayfield:Notify({Title = "Couteau détecté", Content = "Le couteau est au sol !", Duration = 4})
+                                        Rayfield:Notify({Title = "Couteau detecte", Content = "Le couteau est au sol !", Duration = 4})
                                     end
                                     NotifiedItems[item] = true
                                 end
@@ -633,29 +617,25 @@ local function _launchMenu(session)
     end
 
     -- ═══════════════════════════════════════════════════════════
-    -- DETECTEUR DE RÔLES (notif quand quelqu'un a le couteau/pistolet)
+    -- ROLE DETECTOR
     -- ═══════════════════════════════════════════════════════════
-
-    local RoleNotified = {}
 
     local function updateRoleDetector()
         for _, plr in ipairs(Players:GetPlayers()) do
             if plr ~= LocalPlayer and not RoleNotified[plr] then
                 local role = getPlayerRole(plr)
                 if role == "Murderer" and DetectorSettings.NotifyMurderer then
-                    Rayfield:Notify({Title = "Murderer détecté", Content = plr.Name .. " est le Murderer !", Duration = 5})
+                    Rayfield:Notify({Title = "Murderer detecte", Content = plr.Name .. " est le Murderer !", Duration = 5})
                     RoleNotified[plr] = true
                 elseif role == "Sheriff" and DetectorSettings.NotifySheriff then
-                    Rayfield:Notify({Title = "Sheriff détecté", Content = plr.Name .. " est le Sheriff", Duration = 5})
+                    Rayfield:Notify({Title = "Sheriff detecte", Content = plr.Name .. " est le Sheriff", Duration = 5})
                     RoleNotified[plr] = true
                 end
             end
         end
-        -- reset si la partie reset (le joueur perd son rôle)
         for plr, _ in pairs(RoleNotified) do
-            if not plr.Parent then RoleNotified[plr] = nil end
-            elseif getPlayerRole(plr) == "Innocent" and plr.Character then
-                -- garder la notif, c'est ok
+            if not plr or not plr.Parent then
+                RoleNotified[plr] = nil
             end
         end
     end
@@ -832,7 +812,6 @@ local function _launchMenu(session)
         local hum = plr.Character:FindFirstChildOfClass("Humanoid")
         if not hum or hum.Health <= 0 then return end
 
-        -- méthode 1 : remotes classiques MM2
         pcall(function()
             local remotes = ReplicatedStorage:FindFirstChild("Remotes")
             if remotes then
@@ -846,7 +825,6 @@ local function _launchMenu(session)
                 end
             end
         end)
-        -- méthode 2 : direct
         pcall(function() hum.Health = 0 end)
     end
 
@@ -1066,7 +1044,6 @@ local function _launchMenu(session)
             while AutoFarmRunning and MiscSettings.AutoFarmCoins do
                 local _, _, hrp = getLocalCharacter()
                 if hrp then
-                    -- TP sur chaque coin disponible
                     for _, item in ipairs(Workspace:GetChildren()) do
                         local n = item.Name:lower()
                         if n == "coin" or n:find("coin") then
@@ -1158,7 +1135,7 @@ local function _launchMenu(session)
             if MiscSettings.AutoRespawn then
                 task.wait(2)
                 pcall(function()
-                    LocalPlayer.Character:BreakJoints()
+                    if LocalPlayer.Character then LocalPlayer.Character:BreakJoints() end
                 end)
             end
         end)
@@ -1247,11 +1224,10 @@ local function _launchMenu(session)
         LoadingSubtitle = _H("6279204b616e6861"),
         Theme = "Dark",
         ToggleUIKeybind = Enum.KeyCode.RightShift,
-        ConfigurationSaving = { Enabled = true, FolderName = "KanhaHub", FileName = "MM2V1" },
+        ConfigurationSaving = { Enabled = false },
         KeySystem = false,
     })
 
-    -- ═══ MAIN ═══
     local MainTab = Window:CreateTab(_H("4d61696e"), 6031097226)
     MainTab:CreateSection(_H("4175746f20506c6179"))
     MainTab:CreateToggle({Name = _H("4175746f204661726d20436f696e73"), CurrentValue = false, Flag = "AutoFarmOn",
@@ -1271,7 +1247,6 @@ local function _launchMenu(session)
     MainTab:CreateButton({Name = _H("5450204d75726465726572"), Callback = function() tpToRole("Murderer") end})
     MainTab:CreateButton({Name = _H("54502053686572696666"), Callback = function() tpToRole("Sheriff") end})
 
-    -- ═══ COMBAT ═══
     local CombatTab = Window:CreateTab(_H("436f6d626174"), 6031097226)
     CombatTab:CreateSection(_H("41696d626f74"))
     CombatTab:CreateToggle({Name = _H("456e61626c652041696d626f74"), CurrentValue = false, Flag = "AimbotEnabled",
@@ -1342,7 +1317,6 @@ local function _launchMenu(session)
     CombatTab:CreateToggle({Name = _H("466c696e67204d6f6465"), CurrentValue = false, Flag = "FlingEnabled",
         Callback = function(v) KillSettings.FlingEnabled = v; if v then startKillAura() end end})
 
-    -- ═══ ESP ═══
     local ESPTab = Window:CreateTab(_H("455350"), 6031097226)
     ESPTab:CreateSection(_H("506c6179657273"))
     ESPTab:CreateToggle({Name = _H("456e61626c6520455350"), CurrentValue = false, Flag = "ESPOn",
@@ -1392,7 +1366,6 @@ local function _launchMenu(session)
     ESPTab:CreateColorPicker({Name = _H("47756e20436f6c6f72"), Color = Color3.fromRGB(200, 100, 255), Flag = "ESPColGun",
         Callback = function(c) ESPSettings.GunColor = c end})
 
-    -- ═══ DETECTOR ═══
     local DetectorTab = Window:CreateTab(_H("4465746563746f72"), 6031097226)
     DetectorTab:CreateSection(_H("4e6f74696669636174696f6e73"))
     DetectorTab:CreateToggle({Name = _H("4e6f74696679204d75726465726572"), CurrentValue = true, Flag = "NotifyMurderer",
@@ -1404,7 +1377,6 @@ local function _launchMenu(session)
     DetectorTab:CreateToggle({Name = _H("4e6f74696679204b6e696665"), CurrentValue = true, Flag = "NotifyKnife",
         Callback = function(v) DetectorSettings.NotifyKnife = v end})
 
-    -- ═══ AUTO PICKUP ═══
     local PickupTab = Window:CreateTab(_H("5069636b7570"), 6031097226)
     PickupTab:CreateSection(_H("4175746f205069636b7570"))
     PickupTab:CreateToggle({Name = _H("4175746f205069636b75702047756e"), CurrentValue = false, Flag = "AutoPickupGun",
@@ -1421,7 +1393,6 @@ local function _launchMenu(session)
         CurrentValue = 0.5, Flag = "AutoPickupDelay",
         Callback = function(v) AutoPickupSettings.AutoPickupDelay = v end})
 
-    -- ═══ MOVEMENT ═══
     local PlayerTab = Window:CreateTab(_H("506c61796572"), 6031097226)
     PlayerTab:CreateSection(_H("4d6f76656d656e74"))
     PlayerTab:CreateSlider({Name = _H("57616c6b5370656564"), Range = {16, 500}, Increment = 1, Suffix = "",
@@ -1454,7 +1425,6 @@ local function _launchMenu(session)
     PlayerTab:CreateToggle({Name = _H("46756c6c627269676874"), CurrentValue = false, Flag = "Fullbright",
         Callback = function(v) MiscSettings.Fullbright = v; toggleFullbright(v) end})
 
-    -- ═══ SETTINGS ═══
     local SettingsTab = Window:CreateTab(_H("53657474696e6773"), 6031097226)
     SettingsTab:CreateSection(_H("536572766572"))
     SettingsTab:CreateButton({Name = _H("52656a6f696e20536572766572"),
