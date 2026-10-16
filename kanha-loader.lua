@@ -13,6 +13,7 @@ local _BASE = "https://raw.githubusercontent.com/moumou31k-cyber/scripts/refs/he
 local GAMES = {
     {name = _H("526976616c73"),      file = _H("726976616c732e6c7561"),       placeIds = {17625359962}},
     {name = _H("417273656e616c"),    file = _H("617273656e616c2e6c7561"),     placeIds = {286090429}},
+    {name = _H("4d4d32"),            file = _H("6d6d322e6c7561"),             placeIds = {142823291}},
 }
 
 local HttpService      = game:GetService("HttpService")
