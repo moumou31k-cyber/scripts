@@ -1185,6 +1185,19 @@ CombatTab:CreateDropdown({Name = "Mouse Button",
 CombatTab:CreateSlider({Name = "Smoothness", Range = {0.01, 1}, Increment = 0.01, Suffix = "",
     CurrentValue = 0.35, Flag = "AimbotSmooth",
     Callback = function(v) AimSettings.Smoothness = v end})
+CombatTab:CreateDropdown({Name = "Aimbot Target Part", Options = {"Head", "HumanoidRootPart", "Torso"},
+    CurrentOption = {"Head"}, Flag = "AimbotPart",
+    Callback = function(opt) AimSettings.TargetPart = typeof(opt) == "table" and opt[1] or opt end})
+CombatTab:CreateToggle({Name = "Enable Prediction", CurrentValue = false, Flag = "AimbotPred",
+    Callback = function(v) AimSettings.UsePrediction = v end})
+CombatTab:CreateSlider({Name = "Prediction Amount", Range = {0.01, 1}, Increment = 0.01, Suffix = "",
+    CurrentValue = 0.165, Flag = "AimbotPredAmt",
+    Callback = function(v) AimSettings.Prediction = v end})
+CombatTab:CreateToggle({Name = "Sticky Target", CurrentValue = false, Flag = "AimbotSticky",
+    Callback = function(v) AimSettings.StickyTarget = v end})
+CombatTab:CreateSlider({Name = "Sticky Duration", Range = {0.1, 2}, Increment = 0.05, Suffix = "s",
+    CurrentValue = 0.3, Flag = "AimbotStickyTime",
+    Callback = function(v) AimSettings.StickyTime = v end})
 CombatTab:CreateToggle({Name = "Team Check", CurrentValue = true, Flag = "AimbotTeam",
     Callback = function(v) AimSettings.TeamCheck = v end})
 CombatTab:CreateToggle({Name = "Wall Check", CurrentValue = false, Flag = "AimbotWall",
@@ -1238,7 +1251,7 @@ ExploitTab:CreateButton({
     Name = "Equip Golden Knife",
     Callback = function()
         local ok = equipGoldenKnife()
-        Rayfield:Notify({Title = "Golden Knife", Content = ok and "Équipé." or "Introuvable.", Duration = 3})
+        Rayfield:Notify({Title = "Golden Knife", Content = ok and "Equipped." or "Not found.", Duration = 3})
     end})
 ExploitTab:CreateKeybind({Name = "Golden Knife Key", CurrentKeybind = "G", HoldToInteract = false, Flag = "GoldenKey",
     Callback = function(k) ExploitSettings.GoldenKnifeKeybind = Enum.KeyCode[k] end})
@@ -1256,14 +1269,14 @@ SkinTab:CreateButton({
     Name = "Apply to Current Weapon",
     Callback = function()
         if not SkinSettings.SelectedSkin then
-            Rayfield:Notify({Title = "Skin", Content = "Choisis un skin.", Duration = 3}); return
+            Rayfield:Notify({Title = "Skin", Content = "Pick a skin first.", Duration = 3}); return
         end
         local tool = findCurrentWeapon()
         if not tool then
-            Rayfield:Notify({Title = "Skin", Content = "Aucune arme équipée.", Duration = 3}); return
+            Rayfield:Notify({Title = "Skin", Content = "No weapon equipped.", Duration = 3}); return
         end
         local ok = applySkin(tool.Name, SkinSettings.SelectedSkin)
-        Rayfield:Notify({Title = "Skin", Content = ok and ("OK: " .. SkinSettings.SelectedSkin) or "Fallback local.", Duration = 3})
+        Rayfield:Notify({Title = "Skin", Content = ok and ("OK: " .. SkinSettings.SelectedSkin) or "Local fallback.", Duration = 3})
     end})
 SkinTab:CreateToggle({Name = "Auto-Apply on Equip", CurrentValue = false, Flag = "SkinAuto",
     Callback = function(v) SkinSettings.AutoApply = v; if v then startSkinAuto() end end})
